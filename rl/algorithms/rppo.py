@@ -26,7 +26,6 @@ class RPPO:
         self.optimizer = torch.optim.Adam(self.agent.parameters(), lr=self.lr)
 
         self.logger = SummaryWriter()
-        self.logger.add_hparams(config.dict(), {})
 
         self.update_steps = 0
 
@@ -40,6 +39,9 @@ class RPPO:
                 hidden = self.agent.get_init_state(self.n_envs, self.device)
                 episodic_returns = []
                 episodic_length = []
+
+                rewards = np.zeros(self.n_envs)
+                episodic_rewards = []
 
                 for _ in range(self.epoch_steps):
                     old_hidden = hidden
@@ -65,6 +67,12 @@ class RPPO:
                     )
                     done = np.logical_or(done, truncated)
                     terminal = torch.Tensor(done).float()
+                    rewards += reward
+
+                    if done.any():
+                        (ended_idxs,) = np.where(done)
+                        episodic_rewards += [r for r in rewards[ended_idxs]]
+                        rewards[ended_idxs] = 0
 
                     if "episode" in infos:
                         (ended_idxs,) = np.where(infos["_episode"])
@@ -92,6 +100,14 @@ class RPPO:
                 )
                 buffer.finish_rollout(
                     final_value.flatten(), done, self.gamma, self.gae_lambda
+                )
+
+                if len(episodic_rewards) == 0:
+                    episodic_rewards += [r for r in rewards]
+                self.logger.add_scalar(
+                    "train/episodic_returns",
+                    np.mean(episodic_rewards),
+                    self.update_steps,
                 )
 
                 print(
@@ -128,6 +144,10 @@ class RPPO:
                     b_critic_hidden = critic_hidden[:, b_idxs][0].permute(1, 0, 2)
                     b_critic_cell = critic_cell[:, b_idxs][0].permute(1, 0, 2)
 
+                    # normalize advantages
+                    # adv_mean, adv_std = b_advantages.mean(), b_advantages.std() + 1e-8
+                    # b_advantages = (b_advantages - adv_mean) / adv_std
+
                     # setting hidden recurerent states
                     actor_hidden_states = (b_actor_hidden, b_actor_cell)
                     critic_hidden_states = (b_critic_hidden, b_critic_cell)
@@ -163,7 +183,7 @@ class RPPO:
                     v_loss = F.mse_loss(b_returns, values.squeeze(-1))
 
                     # compute final loss
-                    loss = pg_loss + v_loss
+                    loss = pg_loss + 0.5 * v_loss
                     self.optimizer.zero_grad()
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(self.agent.parameters(), 0.5)
