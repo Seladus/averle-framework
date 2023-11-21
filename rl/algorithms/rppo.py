@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 from rl.common.buffers.ppo_rollout_buffer import RecurrentRolloutBuffer
+from collections import deque
 
 
 class RPPO:
@@ -20,6 +21,7 @@ class RPPO:
         self.gamma = float(config.gamma)
         self.gae_lambda = float(config.gae_lambda)
         self.clip_eps = float(config.clip_eps)
+        self.norm_adv = bool(config.norm_adv)
 
         self.agent = agent
 
@@ -28,8 +30,10 @@ class RPPO:
         self.logger = SummaryWriter()
 
         self.update_steps = 0
+        self.steps = 0
 
     def train(self, env):
+        episodic_rewards_queue = deque([], maxlen=100)
         for i in range(self.nb_epochs):
             obsv, _ = env.reset()
             buffer = RecurrentRolloutBuffer()
@@ -102,12 +106,22 @@ class RPPO:
                     final_value.flatten(), done, self.gamma, self.gae_lambda
                 )
 
+                self.steps += self.epoch_steps
+
                 if len(episodic_rewards) == 0:
                     episodic_rewards += [r for r in rewards]
+                mean_rewards = np.mean(episodic_rewards)
+                episodic_rewards_queue.append(mean_rewards)
+
                 self.logger.add_scalar(
                     "train/episodic_returns",
-                    np.mean(episodic_rewards),
-                    self.update_steps,
+                    mean_rewards,
+                    self.steps,
+                )
+                self.logger.add_scalar(
+                    "train/mean_episodic_returns",
+                    np.mean(episodic_rewards_queue),
+                    self.steps,
                 )
 
                 print(
@@ -145,8 +159,8 @@ class RPPO:
                     b_critic_cell = critic_cell[:, b_idxs][0].permute(1, 0, 2)
 
                     # normalize advantages
-                    # adv_mean, adv_std = b_advantages.mean(), b_advantages.std() + 1e-8
-                    # b_advantages = (b_advantages - adv_mean) / adv_std
+                    adv_mean, adv_std = b_advantages.mean(), b_advantages.std() + 1e-8
+                    b_advantages = (b_advantages - adv_mean) / adv_std
 
                     # setting hidden recurerent states
                     actor_hidden_states = (b_actor_hidden, b_actor_cell)
@@ -188,7 +202,7 @@ class RPPO:
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(self.agent.parameters(), 0.5)
                     self.optimizer.step()
-                    self.update_steps += 1
+                self.update_steps += 1
 
             y_pred, y_true = (
                 values.detach().view(self.seq_len, -1).cpu().numpy(),
