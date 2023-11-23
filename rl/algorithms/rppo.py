@@ -185,7 +185,9 @@ class RPPO:
                     np.mean(episodic_rewards_queue),
                     self.steps,
                 )
-                self.logger.add_scalar("fps", (time() - t) / self.nb_epochs, self.steps)
+                self.logger.add_scalar(
+                    "execution/fps", self.nb_epochs / (time() - t), self.steps
+                )
 
             (
                 states,
@@ -207,6 +209,7 @@ class RPPO:
             entropy_losses = []
             explained_vars = []
 
+            t = time()
             # sample batchs and update models
             idxs = np.arange(nb_seq)
             for i in range(self.nb_optim):
@@ -309,6 +312,9 @@ class RPPO:
 
                 self.update_steps += 1
 
+            self.logger.add_scalar(
+                "execution/ups", self.nb_optim / (time() - t), self.steps
+            )
             self.logger.add_scalar("train/lr", self.current_lr, self.steps)
             self.logger.add_scalar("train/clip", self.clip_eps, self.steps)
             self.logger.add_scalar("train/value_loss", np.mean(v_losses), self.steps)
