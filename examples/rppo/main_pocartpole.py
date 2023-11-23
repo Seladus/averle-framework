@@ -21,7 +21,7 @@ if __name__ == "__main__":
     np.random.seed(seed)
     torch.random.manual_seed(seed)
 
-    config = Config("./config.yml")
+    config = Config("./examples/rppo/pocartpole_config.yml")
     env = gym.vector.make("POCartPole-v1", asynchronous=False, num_envs=config.n_envs)
     test_env = gym.vector.make(
         "POCartPole-v1", asynchronous=False, num_envs=1, max_episode_steps=500
