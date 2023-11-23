@@ -137,6 +137,7 @@ class RPPO:
                 actor_cell,
                 critic_hidden,
                 critic_cell,
+                masks,
             ), nb_seq = buffer.build_sequences(self.seq_len)
 
             # sample batchs and update models
@@ -157,10 +158,15 @@ class RPPO:
                     b_actor_cell = actor_cell[:, b_idxs][0].permute(1, 0, 2)
                     b_critic_hidden = critic_hidden[:, b_idxs][0].permute(1, 0, 2)
                     b_critic_cell = critic_cell[:, b_idxs][0].permute(1, 0, 2)
+                    b_masks = masks[b_idxs].T
 
                     # normalize advantages
-                    adv_mean, adv_std = b_advantages.mean(), b_advantages.std() + 1e-8
-                    b_advantages = (b_advantages - adv_mean) / adv_std
+                    if self.norm_adv:
+                        adv_mean, adv_std = (
+                            b_advantages.mean(),
+                            b_advantages.std() + 1e-8,
+                        )
+                        b_advantages = (b_advantages - adv_mean) / adv_std
 
                     # setting hidden recurerent states
                     actor_hidden_states = (b_actor_hidden, b_actor_cell)
@@ -190,11 +196,14 @@ class RPPO:
                         torch.clamp(prob_ratio, 1 - self.clip_eps, 1 + self.clip_eps)
                         * b_advantages
                     )
-                    pg_loss = -torch.mean(torch.min(pg_loss1, pg_loss2))
+                    pg_loss = torch.min(pg_loss1, pg_loss2) * b_masks
+                    pg_loss = -torch.mean(pg_loss)
 
                     # compute critic loss
                     values, _ = self.agent.critic(b_states, hidden_states)
-                    v_loss = F.mse_loss(b_returns, values.squeeze(-1))
+                    v_loss = F.mse_loss(
+                        b_returns * b_masks, values.squeeze(-1) * b_masks
+                    )
 
                     # compute final loss
                     loss = pg_loss + 0.5 * v_loss

@@ -111,6 +111,14 @@ class RecurrentRolloutBuffer:
             trajectory_sequences[key] = pad_sequence(trajectory_sequences[key])
 
         nb_seq = trajectory_sequences["states"].shape[1]
+        sequences_idxs = [item for row in sequences_idxs for item in row]
+
+        # build masks
+        masks = torch.zeros((nb_seq, seq_len))
+        for i, seq_idxs in enumerate(sequences_idxs):
+            l = len(seq_idxs)
+            masks[i, :l] = torch.ones(l)
+
         return (
             trajectory_sequences["states"],
             trajectory_sequences["actions"],
@@ -121,4 +129,5 @@ class RecurrentRolloutBuffer:
             trajectory_sequences["actor_cell_states"],
             trajectory_sequences["critic_hidden_states"],
             trajectory_sequences["critic_cell_states"],
+            masks,
         ), nb_seq
