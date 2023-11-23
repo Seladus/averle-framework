@@ -25,6 +25,8 @@ class RPPO:
         self.clip_eps = float(config.clip_eps)
         self.norm_adv = bool(config.norm_adv)
         self.max_grad_norm = float(config.max_grad_norm)
+        self.v_coef = float(config.v_coef)
+        self.entropy_coef = float(config.entropy_coef)
 
         self.agent = agent
 
@@ -169,6 +171,7 @@ class RPPO:
             approx_kls = []
             pg_losses = []
             v_losses = []
+            entropy_losses = []
             explained_vars = []
 
             # sample batchs and update models
@@ -222,6 +225,11 @@ class RPPO:
                             .item()
                         ]
 
+                    # compute entropy loss
+                    entropy = action_dist.entropy() * b_masks
+                    entropy_loss = -torch.mean(entropy)
+
+                    # compute policy loss
                     pg_loss1 = prob_ratio * b_advantages
                     pg_loss2 = (
                         torch.clamp(prob_ratio, 1 - self.clip_eps, 1 + self.clip_eps)
@@ -237,7 +245,11 @@ class RPPO:
                     )
 
                     # compute final loss
-                    loss = pg_loss + 0.5 * v_loss
+                    loss = (
+                        pg_loss
+                        + self.v_coef * v_loss
+                        + self.entropy_coef * entropy_loss
+                    )
                     self.optimizer.zero_grad()
                     loss.backward()
                     if self.max_grad_norm:
@@ -259,12 +271,14 @@ class RPPO:
                     approx_kls.append(approx_kl.cpu().item())
                     pg_losses.append(pg_loss.cpu().item())
                     v_losses.append(v_loss.cpu().item())
+                    entropy_losses.append(entropy.mean().cpu().item())
                     explained_vars.append(explained_var)
 
                 self.update_steps += 1
 
             self.logger.add_scalar("train/value_loss", np.mean(v_losses), self.steps)
             self.logger.add_scalar("train/policy_loss", np.mean(pg_losses), self.steps)
+            self.logger.add_scalar("train/entropy", np.mean(entropy_losses), self.steps)
             self.logger.add_scalar("train/approx_kl", np.mean(approx_kls), self.steps)
             self.logger.add_scalar("train/clipfrac", np.mean(clipfracs), self.steps)
             self.logger.add_scalar(
