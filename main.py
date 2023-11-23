@@ -1,3 +1,4 @@
+from typing import Any
 import yaml
 import torch
 import numpy as np
@@ -46,6 +47,9 @@ class Config:
     def dict(self):
         return self.config
 
+    def __getattr__(self, __name: str) -> Any:
+        return None
+
 
 if __name__ == "__main__":
     seed = 42
@@ -55,14 +59,18 @@ if __name__ == "__main__":
 
     config = Config("./config.yml")
     env = gym.vector.make("POCartPole-v1", asynchronous=False, num_envs=config.n_envs)
+    test_env = gym.vector.make(
+        "POCartPole-v1", asynchronous=False, num_envs=1, max_episode_steps=500
+    )
+    test_env = NormalizeObservation(test_env)
     obs_dim, action_dim = (
         env.unwrapped.single_observation_space.shape[-1],
         env.unwrapped.single_action_space.n,
     )
     env = RecordEpisodeStatistics(env)
     env = NormalizeObservation(env)
-    # env = NormalizeReward(env)
+    env = NormalizeReward(env)
     env.reset(seed=seed)
     agent = RecurrentAgent(obs_dim, action_dim)
     algo = RPPO(agent, config)
-    algo.train(env)
+    algo.train(env, test_env)

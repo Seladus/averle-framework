@@ -6,10 +6,12 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 from rl.common.buffers.ppo_rollout_buffer import RecurrentRolloutBuffer
 from collections import deque
+from torch.distributions import Categorical
 
 
 class RPPO:
-    def __init__(self, agent, config) -> None:
+    def __init__(self, agent, config, test_seed=None) -> None:
+        self.test_seed = config.test_seed
         self.device = config.device
         self.n_envs = config.n_envs
         self.nb_epochs = config.nb_epochs
@@ -22,6 +24,7 @@ class RPPO:
         self.gae_lambda = float(config.gae_lambda)
         self.clip_eps = float(config.clip_eps)
         self.norm_adv = bool(config.norm_adv)
+        self.max_grad_norm = float(config.max_grad_norm)
 
         self.agent = agent
 
@@ -32,17 +35,50 @@ class RPPO:
         self.update_steps = 0
         self.steps = 0
 
-    def train(self, env):
+    def act(self, state, hidden, terminal=None):
+        """used for inference"""
+        n_envs = state.shape[0] if len(state.shape) > 1 else 1
+        terminal = torch.Tensor(terminal).float().to(self.device)
+        with torch.no_grad():
+            probs, new_hidden = self.agent.actor(
+                torch.from_numpy(state).float().view(1, n_envs, -1).to(self.device),
+                hidden,
+                terminal,
+            )
+            action = torch.argmax(probs, dim=-1)
+        return action.flatten().cpu().numpy(), new_hidden
+
+    def evaluate(self, env, n_episodes, seed):
+        n_envs = env.num_envs
+
+        obs, _ = env.reset(seed=seed)
+        terminal = torch.ones(n_envs)
+        hidden = self.agent.get_init_state(n_envs, self.device)
+        rewards = np.zeros(n_envs)
+        episodic_rewards = []
+        while len(episodic_rewards) < n_episodes:
+            action, hidden = self.act(obs, hidden, terminal)
+            obs, reward, done, truncated, infos = env.step(action)
+            done = np.logical_or(done, truncated)
+            terminal = torch.Tensor(done).float()
+            rewards += reward
+
+            if done.any():
+                (ended_idxs,) = np.where(done)
+                episodic_rewards += [r for r in rewards[ended_idxs]]
+                rewards[ended_idxs] = 0
+
+        return np.mean(episodic_rewards)
+
+    def train(self, env, test_env):
         episodic_rewards_queue = deque([], maxlen=100)
-        for i in range(self.nb_epochs):
+        for e in range(self.nb_epochs):
             obsv, _ = env.reset()
             buffer = RecurrentRolloutBuffer()
             terminal = torch.ones(self.n_envs)
 
             with torch.no_grad():
                 hidden = self.agent.get_init_state(self.n_envs, self.device)
-                episodic_returns = []
-                episodic_length = []
 
                 rewards = np.zeros(self.n_envs)
                 episodic_rewards = []
@@ -57,11 +93,12 @@ class RPPO:
                         hidden,
                         terminal.to(self.device),
                     )
-                    action_dist, hidden = self.agent.actor(
+                    probs, hidden = self.agent.actor(
                         state.view(1, self.n_envs, -1).to(self.device),
                         hidden,
                         terminal.to(self.device),
                     )
+                    action_dist = Categorical(probs)
                     action = action_dist.sample().flatten()
                     logprob = action_dist.log_prob(action).cpu()
 
@@ -77,15 +114,6 @@ class RPPO:
                         (ended_idxs,) = np.where(done)
                         episodic_rewards += [r for r in rewards[ended_idxs]]
                         rewards[ended_idxs] = 0
-
-                    if "episode" in infos:
-                        (ended_idxs,) = np.where(infos["_episode"])
-                        episodic_returns += [
-                            r for r in infos["episode"]["r"][ended_idxs]
-                        ]
-                        episodic_length += [
-                            l for l in infos["episode"]["l"][ended_idxs]
-                        ]
 
                     buffer.add(
                         old_hidden,
@@ -124,9 +152,6 @@ class RPPO:
                     self.steps,
                 )
 
-                print(
-                    f"EPOCH {i} - mean reward : {np.mean(episodic_returns)} - episode length : {np.mean(episodic_length)}"
-                )
             (
                 states,
                 actions,
@@ -140,9 +165,14 @@ class RPPO:
                 masks,
             ), nb_seq = buffer.build_sequences(self.seq_len)
 
+            clipfracs = []
+            approx_kls = []
+            pg_losses = []
+            v_losses = []
+            explained_vars = []
+
             # sample batchs and update models
             idxs = np.arange(nb_seq)
-            clipfracs = []
             for i in range(self.nb_optim):
                 np.random.shuffle(idxs)
                 for start in range(0, nb_seq, self.batch_size):
@@ -174,7 +204,8 @@ class RPPO:
                     hidden_states = (actor_hidden_states, critic_hidden_states)
 
                     # compute policy gradient loss
-                    action_dist, _ = self.agent.actor(b_states, hidden_states)
+                    probs, _ = self.agent.actor(b_states, hidden_states)
+                    action_dist = Categorical(probs)
                     new_logprobs = action_dist.log_prob(b_actions)
 
                     logratio = new_logprobs - b_logprobs
@@ -209,30 +240,38 @@ class RPPO:
                     loss = pg_loss + 0.5 * v_loss
                     self.optimizer.zero_grad()
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.agent.parameters(), 0.5)
+                    if self.max_grad_norm:
+                        torch.nn.utils.clip_grad_norm_(
+                            self.agent.parameters(), self.max_grad_norm
+                        )
                     self.optimizer.step()
+
+                    y_pred, y_true = (
+                        values.detach().view(self.seq_len, -1).cpu().numpy(),
+                        b_returns.detach().cpu().numpy(),
+                    )
+                    var_y = np.var(y_true)
+                    explained_var = (
+                        np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+                    )
+
+                    # add metrics to update history
+                    approx_kls.append(approx_kl.cpu().item())
+                    pg_losses.append(pg_loss.cpu().item())
+                    v_losses.append(v_loss.cpu().item())
+                    explained_vars.append(explained_var)
+
                 self.update_steps += 1
 
-            y_pred, y_true = (
-                values.detach().view(self.seq_len, -1).cpu().numpy(),
-                b_returns.detach().cpu().numpy(),
-            )
-            var_y = np.var(y_true)
-            explained_var = (
-                np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-            )
+            self.logger.add_scalar("train/value_loss", np.mean(v_losses), self.steps)
+            self.logger.add_scalar("train/policy_loss", np.mean(pg_losses), self.steps)
+            self.logger.add_scalar("train/approx_kl", np.mean(approx_kls), self.steps)
+            self.logger.add_scalar("train/clipfrac", np.mean(clipfracs), self.steps)
             self.logger.add_scalar(
-                "train/value_loss", v_loss.detach().cpu().item(), self.update_steps
+                "train/explained_variance", np.mean(explained_vars), self.steps
             )
-            self.logger.add_scalar(
-                "train/policy_loss", pg_loss.detach().cpu().item(), self.update_steps
-            )
-            self.logger.add_scalar(
-                "train/approx_kl", approx_kl.detach().cpu().item(), self.update_steps
-            )
-            self.logger.add_scalar(
-                "train/clipfrac", np.mean(clipfracs), self.update_steps
-            )
-            self.logger.add_scalar(
-                "train/explained_variance", explained_var, self.update_steps
-            )
+
+            # evaluation
+            eval = self.evaluate(test_env, 5, seed=self.test_seed)
+            self.logger.add_scalar("test/episodic_returns", eval, self.steps)
+            print(f"EPOCH {e} - mean reward : {mean_rewards} - eval reward : {eval}")

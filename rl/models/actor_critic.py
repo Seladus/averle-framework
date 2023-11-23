@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
+
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, h, recurrent_layers):
         super().__init__()
@@ -15,8 +16,10 @@ class Actor(nn.Module):
         self.hidden_cell = None
 
     def get_init_state(self, batch_size, device):
-        self.hidden_cell = (torch.zeros(self.recurrent_layers, batch_size, self.h).to(device),
-                            torch.zeros(self.recurrent_layers, batch_size,self.h).to(device))
+        self.hidden_cell = (
+            torch.zeros(self.recurrent_layers, batch_size, self.h).to(device),
+            torch.zeros(self.recurrent_layers, batch_size, self.h).to(device),
+        )
         return self.hidden_cell
 
     def forward(self, state, hidden, terminal=None):
@@ -25,12 +28,15 @@ class Actor(nn.Module):
         if batch_size != hidden[0].shape[1]:
             hidden = self.get_init_state(batch_size, device)
         if terminal is not None:
-            hidden = [value * (1. - terminal).reshape(1, batch_size, 1) for value in hidden]
+            hidden = [
+                value * (1.0 - terminal).reshape(1, batch_size, 1) for value in hidden
+            ]
         x, new_hidden = self.lstm(state, hidden)
         hidden_out = F.elu(self.layer_hidden(x))
         policy_logits_out = self.layer_policy_logits(hidden_out)
-        policy_dist = Categorical(F.softmax(policy_logits_out, dim=1).to("cpu"))
-        return policy_dist, new_hidden
+        probs = F.softmax(policy_logits_out, dim=-1)
+        return probs, new_hidden
+
 
 class Critic(nn.Module):
     def __init__(self, state_dim, h, recurrent_layers):
@@ -43,8 +49,10 @@ class Critic(nn.Module):
         self.hidden_cell = None
 
     def get_init_state(self, batch_size, device):
-        self.hidden_cell = (torch.zeros(self.recurrent_layers, batch_size, self.h).to(device),
-                            torch.zeros(self.recurrent_layers, batch_size, self.h).to(device))
+        self.hidden_cell = (
+            torch.zeros(self.recurrent_layers, batch_size, self.h).to(device),
+            torch.zeros(self.recurrent_layers, batch_size, self.h).to(device),
+        )
         return self.hidden_cell
 
     def forward(self, state, hidden, terminal=None):
@@ -53,7 +61,9 @@ class Critic(nn.Module):
         if batch_size != hidden[0].shape[1]:
             hidden = self.get_init_state(batch_size, device)
         if terminal is not None:
-            hidden = [value * (1. - terminal).reshape(1, batch_size, 1) for value in hidden]
+            hidden = [
+                value * (1.0 - terminal).reshape(1, batch_size, 1) for value in hidden
+            ]
         x, new_hidden = self.layer_lstm(state, hidden)
         hidden_out = F.elu(self.layer_hidden(x))
         value_out = self.layer_value(hidden_out)
