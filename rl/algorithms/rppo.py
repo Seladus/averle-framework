@@ -7,10 +7,12 @@ from torch.utils.tensorboard import SummaryWriter
 from rl.common.buffers.ppo_rollout_buffer import RecurrentRolloutBuffer
 from collections import deque
 from torch.distributions import Categorical
+from torch.optim.lr_scheduler import LambdaLR
+from rl.common.schedulers import PolynomialSchedule
 
 
 class RPPO:
-    def __init__(self, agent, config, test_seed=None) -> None:
+    def __init__(self, agent, config) -> None:
         self.test_seed = config.test_seed
         self.device = config.device
         self.n_envs = config.n_envs
@@ -19,10 +21,18 @@ class RPPO:
         self.seq_len = config.seq_len
         self.batch_size = config.batch_size
         self.lr = float(config.lr)
+        self.target_lr = float(config.target_lr) if config.target_lr else None
+        self.lr_scheduler = None
         self.nb_optim = config.nb_optim
         self.gamma = float(config.gamma)
         self.gae_lambda = float(config.gae_lambda)
         self.clip_eps = float(config.clip_eps)
+        self.target_clip = (
+            float(config.target_clip) if config.target_clip else self.clip_eps
+        )
+        self.clip_scheduler = PolynomialSchedule(
+            self.clip_eps, self.target_clip, self.nb_epochs, 2.0
+        )
         self.norm_adv = bool(config.norm_adv)
         self.max_grad_norm = float(config.max_grad_norm)
         self.v_coef = float(config.v_coef)
@@ -31,11 +41,30 @@ class RPPO:
         self.agent = agent
 
         self.optimizer = torch.optim.Adam(self.agent.parameters(), lr=self.lr)
+        self.lr_scheduler = (
+            LambdaLR(
+                self.optimizer,
+                lambda epoch: PolynomialSchedule(
+                    self.lr, self.target_lr, self.nb_epochs, 2.0
+                )(epoch)
+                / self.lr,
+            )
+            if self.target_lr is not None
+            else None
+        )
 
         self.logger = SummaryWriter()
 
         self.update_steps = 0
         self.steps = 0
+        self.current_lr = self.lr
+        self.current_clip = self.clip_eps
+
+    def _update_schedulers(self, epoch):
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+            self.current_lr = self.optimizer.param_groups[0]["lr"]
+        self.clip_eps = self.clip_scheduler(epoch)
 
     def act(self, state, hidden, terminal=None):
         """used for inference"""
@@ -276,6 +305,8 @@ class RPPO:
 
                 self.update_steps += 1
 
+            self.logger.add_scalar("train/lr", self.current_lr, self.steps)
+            self.logger.add_scalar("train/clip", self.clip_eps, self.steps)
             self.logger.add_scalar("train/value_loss", np.mean(v_losses), self.steps)
             self.logger.add_scalar("train/policy_loss", np.mean(pg_losses), self.steps)
             self.logger.add_scalar("train/entropy", np.mean(entropy_losses), self.steps)
@@ -288,4 +319,8 @@ class RPPO:
             # evaluation
             eval = self.evaluate(test_env, 5, seed=self.test_seed)
             self.logger.add_scalar("test/episodic_returns", eval, self.steps)
+
+            # update learning rate
+            self._update_schedulers(e)
+
             print(f"EPOCH {e} - mean reward : {mean_rewards} - eval reward : {eval}")
