@@ -9,6 +9,7 @@ from collections import deque
 from torch.distributions import Categorical
 from torch.optim.lr_scheduler import LambdaLR
 from rl.common.schedulers import PolynomialSchedule
+from time import time
 
 
 class RPPO:
@@ -39,6 +40,7 @@ class RPPO:
         self.entropy_coef = float(config.entropy_coef)
 
         self.agent = agent
+        self.agent.to(self.device)
 
         self.optimizer = torch.optim.Adam(self.agent.parameters(), lr=self.lr)
         self.lr_scheduler = (
@@ -104,8 +106,9 @@ class RPPO:
     def train(self, env, test_env):
         episodic_rewards_queue = deque([], maxlen=100)
         for e in range(self.nb_epochs):
+            t = time()
             obsv, _ = env.reset()
-            buffer = RecurrentRolloutBuffer()
+            buffer = RecurrentRolloutBuffer(self.device)
             terminal = torch.ones(self.n_envs)
 
             with torch.no_grad():
@@ -182,6 +185,7 @@ class RPPO:
                     np.mean(episodic_rewards_queue),
                     self.steps,
                 )
+                self.logger.add_scalar("fps", (time() - t) / self.nb_epochs, self.steps)
 
             (
                 states,

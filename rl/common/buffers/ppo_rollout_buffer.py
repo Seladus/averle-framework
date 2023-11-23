@@ -3,7 +3,8 @@ from torch.nn.utils.rnn import pad_sequence
 
 
 class RecurrentRolloutBuffer:
-    def __init__(self) -> None:
+    def __init__(self, device) -> None:
+        self.device = device
         self.trajectory_data = {
             "states": [],
             "actions": [],
@@ -41,13 +42,15 @@ class RecurrentRolloutBuffer:
 
     def finish_rollout(self, final_value, done, gamma, gae_lambda):
         trajectory_tensors = {
-            key: torch.stack(value) for key, value in self.trajectory_data.items()
+            key: torch.stack(value).to(self.device)
+            for key, value in self.trajectory_data.items()
         }
 
         epoch_steps = trajectory_tensors["states"].shape[0]
         values = trajectory_tensors["values"]
         rewards = trajectory_tensors["rewards"]
         dones = trajectory_tensors["terminals"]
+        done = torch.Tensor(done).to(self.device)
 
         # compute advantages and returns
         with torch.no_grad():
@@ -129,5 +132,5 @@ class RecurrentRolloutBuffer:
             trajectory_sequences["actor_cell_states"],
             trajectory_sequences["critic_hidden_states"],
             trajectory_sequences["critic_cell_states"],
-            masks,
+            masks.to(self.device),
         ), nb_seq
