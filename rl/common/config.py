@@ -13,3 +13,10 @@ class Config:
 
     def __getattr__(self, __name: str):
         return None
+
+
+class DictConfig(Config):
+    def __init__(self, dict_config={}) -> None:
+        self.config = dict_config
+        for key, value in self.config.items():
+            self.__setattr__(key, value)

@@ -3,25 +3,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from torch.utils.tensorboard import SummaryWriter
 from rl.common.buffers.ppo_rollout_buffer import RecurrentRolloutBuffer
 from collections import deque
 from torch.distributions import Categorical
 from torch.optim.lr_scheduler import LambdaLR
 from rl.common.schedulers import PolynomialSchedule
 from time import time
+from rl.algorithms import RecurrentAlgorithm
 
 
-class RPPO:
+class RPPO(RecurrentAlgorithm):
     def __init__(self, agent, config) -> None:
-        self.test_seed = config.test_seed
-        self.device = config.device
-        self.n_envs = config.n_envs
-        self.nb_epochs = config.nb_epochs
-        self.epoch_steps = config.epoch_steps
-        self.seq_len = config.seq_len
-        self.batch_size = config.batch_size
-        self.lr = float(config.lr)
+        super().__init__(agent, config)
+        self.nb_epochs = config.nb_epochs if config.nb_epochs else 128
+        self.epoch_steps = config.epoch_steps if config.epoch_steps else 256
+        self.seq_len = config.seq_len if config.seq_len else 8
+        self.batch_size = config.batch_size if config.batch_size else 64
+        self.lr = float(config.lr) if config.lr else 1e-3
         self.target_lr = float(config.target_lr) if config.target_lr else None
         self.lr_scheduler = None
         self.nb_optim = config.nb_optim
@@ -35,12 +33,9 @@ class RPPO:
             self.clip_eps, self.target_clip, self.nb_epochs, 2.0
         )
         self.norm_adv = bool(config.norm_adv)
-        self.max_grad_norm = float(config.max_grad_norm)
-        self.v_coef = float(config.v_coef)
-        self.entropy_coef = float(config.entropy_coef)
-
-        self.agent = agent
-        self.agent.to(self.device)
+        self.max_grad_norm = float(config.max_grad_norm) if config.target_clip else None
+        self.v_coef = float(config.v_coef) if config.v_coef else 0.5
+        self.entropy_coef = float(config.entropy_coef) if config.entropy_coef else 0.0
 
         self.optimizer = torch.optim.Adam(self.agent.parameters(), lr=self.lr)
         self.lr_scheduler = (
@@ -54,8 +49,6 @@ class RPPO:
             if self.target_lr is not None
             else None
         )
-
-        self.logger = SummaryWriter()
 
         self.update_steps = 0
         self.steps = 0
@@ -104,6 +97,7 @@ class RPPO:
         return np.mean(episodic_rewards)
 
     def train(self, env, test_env):
+        super().train(env, test_env)
         episodic_rewards_queue = deque([], maxlen=100)
         for e in range(self.nb_epochs):
             t = time()
@@ -329,6 +323,9 @@ class RPPO:
             # evaluation
             eval = self.evaluate(test_env, 5, seed=self.test_seed)
             self.logger.add_scalar("test/episodic_returns", eval, self.steps)
+
+            # save model
+            self.save(f"{self.algo}_{self.steps}_{eval:1f}.pt")
 
             # update learning rate
             self._update_schedulers(e)
