@@ -11,7 +11,7 @@ from gymnasium.wrappers import (
     NormalizeObservation,
 )
 from rl.algorithms.rppo import RPPO
-from rl.models.simple_actor_critic import RecurrentAgent
+from rl.models.simple_actor_critic import SimpleRecurrentAgent
 from rl.common.config import Config
 
 
@@ -22,7 +22,7 @@ if __name__ == "__main__":
     torch.random.manual_seed(seed)
 
     config = Config("./config.yml")
-    env = gym.vector.make("POCartPole-v1", asynchronous=False, num_envs=config.n_envs)
+    env = gym.vector.make("POCartPole-v1", asynchronous=True, num_envs=config.n_envs)
     test_env = gym.vector.make(
         "POCartPole-v1", asynchronous=False, num_envs=1, max_episode_steps=500
     )
@@ -35,6 +35,6 @@ if __name__ == "__main__":
     env = NormalizeObservation(env)
     env = NormalizeReward(env)
     env.reset(seed=seed)
-    agent = RecurrentAgent(obs_dim, action_dim)
+    agent = SimpleRecurrentAgent(obs_dim, action_dim)
     algo = RPPO(agent, config)
     algo.train(env, test_env)

@@ -4,6 +4,17 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 
+class RecurrentAgent(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def critic(self, state, hidden, terminal=None):
+        raise NotImplementedError()
+
+    def actor(self, state, hidden, terminal=None):
+        raise NotImplementedError()
+
+
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, h, recurrent_layers):
         super().__init__()
@@ -70,33 +81,9 @@ class Critic(nn.Module):
         return value_out, new_hidden
 
 
-class RecurrentAgent(nn.Module):
+class SimpleRecurrentAgent(RecurrentAgent):
     def __init__(self, state_dim, action_dim, h=64, recurrent_layers=1) -> None:
         super().__init__()
-        self.actor_net = Actor(state_dim, action_dim, h, recurrent_layers)
-        self.critic_net = Critic(state_dim, h, recurrent_layers)
-
-    def get_init_state(self, batch_size, device):
-        return (
-            self.actor_net.get_init_state(batch_size, device),
-            self.critic_net.get_init_state(batch_size, device),
-        )
-
-    def critic(self, state, hidden, terminal=None):
-        actor_hidden, critic_hidden = hidden
-        value_out, critic_hidden = self.critic_net(state, critic_hidden, terminal)
-        return value_out, (actor_hidden, critic_hidden)
-
-    def actor(self, state, hidden, terminal=None):
-        actor_hidden, critic_hidden = hidden
-        action_dist, actor_hidden = self.actor_net(state, actor_hidden, terminal)
-        return action_dist, (actor_hidden, critic_hidden)
-
-
-class RecurrentAgent(nn.Module):
-    def __init__(self, state_dim, action_dim, h=64, recurrent_layers=1) -> None:
-        super().__init__()
-        recurrent_layers = int(recurrent_layers)
         self.actor_net = Actor(state_dim, action_dim, h, recurrent_layers)
         self.critic_net = Critic(state_dim, h, recurrent_layers)
 

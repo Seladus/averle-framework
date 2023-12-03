@@ -5,12 +5,12 @@ import shutil
 from torch import nn
 from gymnasium.vector import VectorEnv
 from rl.common.config import Config
-from rl.models.simple_actor_critic import RecurrentAgent
+from rl.models.simple_actor_critic import SimpleRecurrentAgent
 from torch.utils.tensorboard import SummaryWriter
 
 
 class RecurrentAlgorithm:
-    def __init__(self, agent: RecurrentAgent, config: Config) -> None:
+    def __init__(self, agent: SimpleRecurrentAgent, config: Config) -> None:
         self.algo = self.__class__.__name__
         self.hparams = config.dict()
 

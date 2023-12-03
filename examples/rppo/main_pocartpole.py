@@ -1,18 +1,18 @@
-from typing import Any
+import sys
+
+sys.path.append(".")
 import torch
 import numpy as np
-import torch.nn as nn
 import gymnasium as gym
-import pocartpole
 from gymnasium.wrappers import (
     RecordEpisodeStatistics,
     NormalizeReward,
     NormalizeObservation,
 )
-from rl.common.schedulers import PolynomialSchedule
-from rl.common.config import Config
 from rl.algorithms.rppo import RPPO
-from rl.models.actor_critic import RecurrentAgent
+from rl.models.simple_actor_critic import SimpleRecurrentAgent
+from rl.common.config import Config
+import pocartpole
 
 
 if __name__ == "__main__":
@@ -22,7 +22,7 @@ if __name__ == "__main__":
     torch.random.manual_seed(seed)
 
     config = Config("./examples/rppo/pocartpole_config.yml")
-    env = gym.vector.make("POCartPole-v1", asynchronous=False, num_envs=config.n_envs)
+    env = gym.vector.make("POCartPole-v1", asynchronous=True, num_envs=config.n_envs)
     test_env = gym.vector.make(
         "POCartPole-v1", asynchronous=False, num_envs=1, max_episode_steps=500
     )
@@ -33,8 +33,8 @@ if __name__ == "__main__":
     )
     env = RecordEpisodeStatistics(env)
     env = NormalizeObservation(env)
-    # env = NormalizeReward(env)
+    env = NormalizeReward(env)
     env.reset(seed=seed)
-    agent = RecurrentAgent(obs_dim, action_dim)
+    agent = SimpleRecurrentAgent(obs_dim, action_dim)
     algo = RPPO(agent, config)
     algo.train(env, test_env)

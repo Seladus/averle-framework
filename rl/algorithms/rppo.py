@@ -21,6 +21,7 @@ class RPPO(RecurrentAlgorithm):
         self.batch_size = config.batch_size if config.batch_size else 64
         self.lr = float(config.lr) if config.lr else 1e-3
         self.target_lr = float(config.target_lr) if config.target_lr else None
+        self.kl_limit = float(config.kl_limit) if config.kl_limit else None
         self.lr_scheduler = None
         self.nb_optim = config.nb_optim
         self.gamma = float(config.gamma)
@@ -280,13 +281,15 @@ class RPPO(RecurrentAlgorithm):
                         + self.v_coef * v_loss
                         + self.entropy_coef * entropy_loss
                     )
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    if self.max_grad_norm:
-                        torch.nn.utils.clip_grad_norm_(
-                            self.agent.parameters(), self.max_grad_norm
-                        )
-                    self.optimizer.step()
+
+                    if self.kl_limit is None or self.kl_limit > approx_kl:
+                        self.optimizer.zero_grad()
+                        loss.backward()
+                        if self.max_grad_norm:
+                            torch.nn.utils.clip_grad_norm_(
+                                self.agent.parameters(), self.max_grad_norm
+                            )
+                        self.optimizer.step()
 
                     y_pred, y_true = (
                         values.detach().view(self.seq_len, -1).cpu().numpy(),
