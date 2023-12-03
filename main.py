@@ -5,14 +5,19 @@ import numpy as np
 import torch.nn as nn
 import gymnasium as gym
 import pocartpole
+import torch.nn.functional as F
 from gymnasium.wrappers import (
     RecordEpisodeStatistics,
     NormalizeReward,
     NormalizeObservation,
 )
 from rl.algorithms.rppo import RPPO
-from rl.models.simple_actor_critic import SimpleRecurrentAgent
+from rl.models.simple_actor_critic import SimpleRecurrentAgent, SharedRecurrentAgent
 from rl.common.config import Config
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters())
 
 
 if __name__ == "__main__":
@@ -22,7 +27,7 @@ if __name__ == "__main__":
     torch.random.manual_seed(seed)
 
     config = Config("./config.yml")
-    env = gym.vector.make("POCartPole-v1", asynchronous=True, num_envs=config.n_envs)
+    env = gym.vector.make("POCartPole-v1", asynchronous=False, num_envs=config.n_envs)
     test_env = gym.vector.make(
         "POCartPole-v1", asynchronous=False, num_envs=1, max_episode_steps=500
     )
@@ -35,6 +40,8 @@ if __name__ == "__main__":
     env = NormalizeObservation(env)
     env = NormalizeReward(env)
     env.reset(seed=seed)
-    agent = SimpleRecurrentAgent(obs_dim, action_dim)
+    # agent = SimpleRecurrentAgent(obs_dim, action_dim)
+    agent = SharedRecurrentAgent(obs_dim, action_dim)
+
     algo = RPPO(agent, config)
     algo.train(env, test_env)
