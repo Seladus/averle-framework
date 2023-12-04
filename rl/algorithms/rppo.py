@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import copy
 from rl.common.buffers.ppo_rollout_buffer import RecurrentRolloutBuffer
 from collections import deque
 from torch.distributions import Categorical
@@ -75,29 +76,8 @@ class RPPO(RecurrentAlgorithm):
             action = torch.argmax(probs, dim=-1)
         return action.flatten().cpu().numpy(), new_hidden
 
-    def evaluate(self, env, n_episodes, seed):
-        n_envs = env.num_envs
-
-        obs, _ = env.reset(seed=seed)
-        terminal = torch.ones(n_envs)
-        hidden = self.agent.get_init_state(n_envs, self.device)
-        rewards = np.zeros(n_envs)
-        episodic_rewards = []
-        while len(episodic_rewards) < n_episodes:
-            action, hidden = self.act(obs, hidden, terminal)
-            obs, reward, done, truncated, infos = env.step(action)
-            done = np.logical_or(done, truncated)
-            terminal = torch.Tensor(done).float()
-            rewards += reward
-
-            if done.any():
-                (ended_idxs,) = np.where(done)
-                episodic_rewards += [r for r in rewards[ended_idxs]]
-                rewards[ended_idxs] = 0
-
-        return np.mean(episodic_rewards)
-
     def train(self, env, test_env):
+        best_reward = -np.inf
         super().train(env, test_env)
         episodic_rewards_queue = deque([], maxlen=100)
         for e in range(self.nb_epochs):
@@ -326,9 +306,13 @@ class RPPO(RecurrentAlgorithm):
             # evaluation
             eval = self.evaluate(test_env, 5, seed=self.test_seed)
             self.logger.add_scalar("test/episodic_returns", eval, self.steps)
+            # save best model
+            if eval >= best_reward:
+                self.save(f"best_model_{eval:.1f}.pt")
+                best_reward = eval
 
             # save model
-            self.save(f"{self.algo}_{self.steps}_{eval:1f}.pt")
+            self.save(f"{self.algo}_{self.steps}_{eval:.1f}.pt")
 
             # update learning rate
             self._update_schedulers(e)
