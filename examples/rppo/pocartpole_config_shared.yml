@@ -1,0 +1,16 @@
+test_seed: 42
+n_envs: 32
+device: "cuda"
+epoch_steps: 256
+nb_epochs: 390
+batch_size: 256
+seq_len: 8
+nb_optim: 20
+gamma: 0.99
+gae_lambda: 0.8
+clip_eps: 0.2
+lr: 1e-3
+norm_adv: True
+v_coef: 0.5
+entropy_coef: 0.0
+# kl_limit: 0.15

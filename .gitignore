@@ -160,5 +160,5 @@ cython_debug/
 #.idea/
 
 runs
-*.yml
+config.yml
 saves
