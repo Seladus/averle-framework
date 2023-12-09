@@ -29,7 +29,7 @@ class RecurrentAlgorithm:
 
         n = 1
         log_folder = config.log_folder if config.log_folder else "runs"
-        self.log_folder = config.log_folder
+        self.log_folder = None
         while self.log_folder is None or os.path.exists(self.log_folder):
             self.log_folder = os.path.join(log_folder, f"{self.algo}_{n}")
             n += 1
