@@ -336,4 +336,6 @@ class RPPO(RecurrentAlgorithm):
             "best_reward": best_reward,
         }
 
+        self.logger.add_hparams(self.hparams, end_metrics)
+
         return end_metrics

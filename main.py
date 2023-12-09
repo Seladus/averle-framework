@@ -21,10 +21,6 @@ from rl.models.simple_actor_critic import (
 from rl.common.config import Config
 
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters())
-
-
 if __name__ == "__main__":
     seed = 42
 
@@ -37,7 +33,6 @@ if __name__ == "__main__":
         "POCartPole-v1", asynchronous=False, num_envs=1, max_episode_steps=500
     )
     test_env = NormalizeObservation(test_env)
-    env = RecordEpisodeStatistics(env)
     env = NormalizeObservation(env)
     obs_dim, action_dim = (
         env.single_observation_space.shape[-1],
@@ -52,4 +47,4 @@ if __name__ == "__main__":
     # agent = SplittedRecurrentAgent(obs_dim, action_dim, f_actor_enc=[], f_critic_enc=[])
     print(agent)
     algo = RPPO(agent, config)
-    algo.train(env, test_env)
+    algo.train(env, test_env, nb_test_episodes=config.n_test)

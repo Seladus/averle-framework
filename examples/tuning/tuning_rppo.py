@@ -41,7 +41,7 @@ if __name__ == "__main__":
     tuning = TuningExperiment(
         build_env, build_test_env, RPPO, SplittedRecurrentAgent, config
     )
-    study = tuning.run(n_trials=4, n_jobs=4)
+    study = tuning.run(n_trials=100, n_jobs=-1)
     best_params = study.best_params
     print(f"Best params found: {best_params}")
     df = study.trials_dataframe(multi_index=True)
