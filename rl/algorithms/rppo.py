@@ -76,9 +76,10 @@ class RPPO(RecurrentAlgorithm):
             action = torch.argmax(probs, dim=-1)
         return action.flatten().cpu().numpy(), new_hidden
 
-    def train(self, env, test_env, nb_test_episodes=5):
+    def train(self, env, test_env, nb_test_episodes=5, save=True, verbose=True):
+        self.n_envs = env.num_envs
         best_reward = -np.inf
-        super().train(env, test_env)
+        super().train(env, test_env, save=save)
         episodic_rewards_queue = deque([], maxlen=100)
         test_episodic_rewards_queue = deque([], maxlen=20)
         for e in range(self.nb_epochs):
@@ -315,7 +316,8 @@ class RPPO(RecurrentAlgorithm):
             )
             # save best model
             if eval >= best_reward:
-                self.save(f"best_model_{eval:.1f}.pt")
+                if save:
+                    self.save(f"best_model_{eval:.1f}.pt")
                 best_reward = eval
 
             # save model
@@ -324,4 +326,14 @@ class RPPO(RecurrentAlgorithm):
             # update learning rate
             self._update_schedulers(e)
 
-            print(f"EPOCH {e} - mean reward : {mean_rewards} - eval reward : {eval}")
+            if verbose:
+                print(
+                    f"EPOCH {e} - mean reward : {mean_rewards} - eval reward : {eval}"
+                )
+
+        end_metrics = {
+            "avg_episodic_returns": np.mean(test_episodic_rewards_queue),
+            "best_reward": best_reward,
+        }
+
+        return end_metrics

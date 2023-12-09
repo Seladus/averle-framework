@@ -20,3 +20,18 @@ class DictConfig(Config):
         self.config = dict_config
         for key, value in self.config.items():
             self.__setattr__(key, value)
+
+
+class ExperimentConfig(Config):
+    def __init__(self, path="./config.yml") -> None:
+        super().__init__(path)
+
+        self.algo_tune_params = {}
+        for key, value in self.config["algo"].items():
+            if type(value) is dict and "type" in value.keys():  # param to be tuned
+                self.algo_tune_params[key] = DictConfig(value)
+
+        self.agent_tune_params = {}
+        for key, value in self.config["agent"].items():
+            if type(value) is dict and "type" in value.keys():  # param to be tuned
+                self.agent_tune_params[key] = DictConfig(value)

@@ -59,10 +59,11 @@ class RecurrentAlgorithm:
 
         return np.mean(episodic_rewards)
 
-    def train(self, env: VectorEnv, test_env: VectorEnv):
-        if os.path.exists(self.save_folder):
-            shutil.rmtree(self.save_folder)
-        os.mkdir(self.save_folder)
+    def train(self, env: VectorEnv, test_env: VectorEnv, save=True):
+        if save:
+            if os.path.exists(self.save_folder):
+                shutil.rmtree(self.save_folder)
+            os.mkdir(self.save_folder)
         self.logger = SummaryWriter(self.log_folder)
 
     def save(self, name):

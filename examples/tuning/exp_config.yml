@@ -1,0 +1,29 @@
+n_envs: 32
+
+algo:
+  test_seed: 42
+  device: "cpu"
+  epoch_steps: 256
+  nb_epochs: 40
+  batch_size: 256
+  seq_len: 8
+  nb_optim: 20
+  gamma: 0.99
+  gae_lambda:
+    type: float
+    low: 0.8
+    high: 0.95
+  clip_eps:
+    type: float
+    low: 0.1
+    high: 0.3
+  lr: 1e-3
+  norm_adv: True
+  v_coef: 0.5
+  entropy_coef: 0.01
+
+agent:
+  f_lstm: 64
+  n_recurrent: 1
+  f_actor_head: [64]
+  f_critic_head: [64]

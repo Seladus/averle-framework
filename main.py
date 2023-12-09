@@ -37,12 +37,12 @@ if __name__ == "__main__":
         "POCartPole-v1", asynchronous=False, num_envs=1, max_episode_steps=500
     )
     test_env = NormalizeObservation(test_env)
-    obs_dim, action_dim = (
-        env.unwrapped.single_observation_space.shape[-1],
-        env.unwrapped.single_action_space.n,
-    )
     env = RecordEpisodeStatistics(env)
     env = NormalizeObservation(env)
+    obs_dim, action_dim = (
+        env.single_observation_space.shape[-1],
+        env.single_action_space.n,
+    )
     # env = NormalizeReward(env)
     env.reset(seed=seed)
     # agent = SimpleRecurrentAgent(obs_dim, action_dim)
