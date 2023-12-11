@@ -303,3 +303,108 @@ class SplittedRecurrentAgent(RecurrentAgent):
         x, new_critic_hidden = self.critic_recurrent(x, critic_hidden)
         value = self.critic_head(x)
         return value, (actor_hidden, new_critic_hidden)
+
+
+class DropoutSplittedRecurrentAgent(RecurrentAgent):
+    def __init__(
+        self,
+        state_dim,
+        action_dim,
+        f_actor_enc=[],
+        f_critic_enc=[],
+        f_lstm=64,
+        n_recurrent=1,
+        f_actor_head=[64],
+        f_critic_head=[64],
+        p=0.5,
+    ):
+        super().__init__()
+
+        self.n_recurrent = n_recurrent
+        self.f_lstm = f_lstm
+        f_actor_enc = [state_dim] + f_actor_enc
+        f_critic_enc = [state_dim] + f_critic_enc
+        f_actor_head = [f_lstm] + f_actor_head + [action_dim]
+        f_critic_head = [f_lstm] + f_critic_head + [1]
+        activation = nn.ELU
+
+        # encoding layers
+        actor_enc = [
+            nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
+            if idx < (len(f_actor_enc) - 2)
+            else nn.Linear(i, o)
+            for idx, (i, o) in enumerate(zip(f_actor_enc[:-1], f_actor_enc[1:]))
+        ]
+        critic_enc = [
+            nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
+            if idx < (len(f_critic_enc) - 2)
+            else nn.Linear(i, o)
+            for idx, (i, o) in enumerate(zip(f_critic_enc[:-1], f_critic_enc[1:]))
+        ]
+        self.actor_enc = nn.Sequential(*actor_enc)
+        self.critic_enc = nn.Sequential(*critic_enc)
+        # recurrent layers
+        self.actor_recurrent = nn.LSTM(f_actor_enc[-1], f_lstm, num_layers=n_recurrent)
+        self.critic_recurrent = nn.LSTM(
+            f_critic_enc[-1], f_lstm, num_layers=n_recurrent
+        )
+        # output heads
+        actor_head = [
+            nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
+            if idx < (len(f_actor_head) - 2)
+            else nn.Linear(i, o)
+            for idx, (i, o) in enumerate(zip(f_actor_head[:-1], f_actor_head[1:]))
+        ]
+        self.actor_head = nn.Sequential(*actor_head)
+        critic_head = [
+            nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
+            if idx < (len(f_critic_head) - 2)
+            else nn.Linear(i, o)
+            for idx, (i, o) in enumerate(zip(f_critic_head[:-1], f_critic_head[1:]))
+        ]
+        self.critic_head = nn.Sequential(*critic_head)
+
+    def get_init_state(self, batch_size, device):
+        actor_hidden = (
+            torch.zeros(self.n_recurrent, batch_size, self.f_lstm).to(device),
+            torch.zeros(self.n_recurrent, batch_size, self.f_lstm).to(device),
+        )
+        critic_hidden = (
+            torch.zeros(self.n_recurrent, batch_size, self.f_lstm).to(device),
+            torch.zeros(self.n_recurrent, batch_size, self.f_lstm).to(device),
+        )
+        return (actor_hidden, critic_hidden)
+
+    def actor(self, state, hidden, terminal=None):
+        actor_hidden, critic_hidden = hidden
+        batch_size = state.shape[1]
+        device = state.device
+        if batch_size != actor_hidden[0].shape[1]:
+            actor_hidden = self.get_init_state(batch_size, device)[0]
+        if terminal is not None:
+            actor_hidden = [
+                value * (1.0 - terminal).reshape(1, batch_size, 1)
+                for value in actor_hidden
+            ]
+        x = self.actor_enc(state)
+        # x = state
+        x, new_actor_hidden = self.actor_recurrent(x, actor_hidden)
+        logits = self.actor_head(x)
+        probs = F.softmax(logits, dim=-1)
+        return probs, (new_actor_hidden, critic_hidden)
+
+    def critic(self, state, hidden, terminal=None):
+        actor_hidden, critic_hidden = hidden
+        batch_size = state.shape[1]
+        device = state.device
+        if batch_size != critic_hidden[0].shape[1]:
+            critic_hidden = self.get_init_state(batch_size, device)[1]
+        if terminal is not None:
+            critic_hidden = [
+                value * (1.0 - terminal).reshape(1, batch_size, 1)
+                for value in critic_hidden
+            ]
+        x = self.critic_enc(state)
+        x, new_critic_hidden = self.critic_recurrent(x, critic_hidden)
+        value = self.critic_head(x)
+        return value, (actor_hidden, new_critic_hidden)

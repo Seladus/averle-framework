@@ -65,6 +65,7 @@ class RPPO(RecurrentAlgorithm):
 
     def act(self, state, hidden, terminal=None):
         """used for inference"""
+        self.agent.eval()
         n_envs = state.shape[0] if len(state.shape) > 1 else 1
         terminal = torch.Tensor(terminal).float().to(self.device)
         with torch.no_grad():
@@ -74,6 +75,7 @@ class RPPO(RecurrentAlgorithm):
                 terminal,
             )
             action = torch.argmax(probs, dim=-1)
+        self.agent.train()
         return action.flatten().cpu().numpy(), new_hidden
 
     def train(self, env, test_env, nb_test_episodes=5, save=True, verbose=True):
