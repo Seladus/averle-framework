@@ -15,7 +15,7 @@ class RecurrentAlgorithm:
         self.hparams = config.dict()
 
         self.test_seed = config.test_seed
-        self.device = config.device
+        self.device = config.device if config.device else "cpu"
         self.n_envs = int(config.n_envs) if config.n_envs else 1
 
         if type(agent) == str:

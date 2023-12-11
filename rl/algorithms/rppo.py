@@ -25,16 +25,16 @@ class RPPO(RecurrentAlgorithm):
         self.kl_limit = float(config.kl_limit) if config.kl_limit else None
         self.lr_scheduler = None
         self.nb_optim = config.nb_optim
-        self.gamma = float(config.gamma)
-        self.gae_lambda = float(config.gae_lambda)
-        self.clip_eps = float(config.clip_eps)
+        self.gamma = float(config.gamma) if config.gamma else 0.99
+        self.gae_lambda = float(config.gae_lambda) if config.gae_lambda else 0.95
+        self.clip_eps = float(config.clip_eps) if config.clip_eps else 0.2
         self.target_clip = (
             float(config.target_clip) if config.target_clip else self.clip_eps
         )
         self.clip_scheduler = PolynomialSchedule(
             self.clip_eps, self.target_clip, self.nb_epochs, 2.0
         )
-        self.norm_adv = bool(config.norm_adv)
+        self.norm_adv = bool(config.norm_adv) if config.norm_adv else True
         self.max_grad_norm = float(config.max_grad_norm) if config.target_clip else None
         self.v_coef = float(config.v_coef) if config.v_coef else 0.5
         self.entropy_coef = float(config.entropy_coef) if config.entropy_coef else 0.0
