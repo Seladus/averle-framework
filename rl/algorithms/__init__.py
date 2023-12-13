@@ -25,7 +25,7 @@ class RecurrentAlgorithm:
         self.agent.to(self.device)
 
         self.save_folder = config.save_folder if config.save_folder else "saves"
-        self.save_freq = int(config.save_folder) if config.save_folder else 1
+        self.save_freq = int(config.save_freq) if config.save_freq else 1
 
         n = 1
         log_folder = config.log_folder if config.log_folder else "runs"
