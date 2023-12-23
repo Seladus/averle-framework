@@ -319,11 +319,11 @@ class RPPO(RecurrentAlgorithm):
             # save best model
             if eval >= best_reward:
                 if save:
-                    self.save(f"best_model_{eval:.1f}.pt")
+                    self.save(f"best_model_{eval:.2f}.pt")
                 best_reward = eval
 
             # save model
-            self.save(f"{self.algo}_{self.steps}_{eval:.1f}.pt")
+            # self.save(f"{self.algo}_{self.steps}_{eval:.1f}.pt")
 
             # update learning rate
             self._update_schedulers(e)
