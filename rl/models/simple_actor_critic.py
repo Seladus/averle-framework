@@ -3,16 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 
-
-class RecurrentAgent(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def critic(self, state, hidden, terminal=None):
-        raise NotImplementedError()
-
-    def actor(self, state, hidden, terminal=None):
-        raise NotImplementedError()
+from rl.models import RecurrentActorCriticAgent
 
 
 class Actor(nn.Module):
@@ -81,7 +72,7 @@ class Critic(nn.Module):
         return value_out, new_hidden
 
 
-class SimpleRecurrentAgent(RecurrentAgent):
+class SimpleRecurrentAgent(RecurrentActorCriticAgent):
     def __init__(self, state_dim, action_dim, h=64, recurrent_layers=1) -> None:
         super().__init__()
         self.actor_net = Actor(state_dim, action_dim, h, recurrent_layers)
@@ -104,7 +95,7 @@ class SimpleRecurrentAgent(RecurrentAgent):
         return action_dist, (actor_hidden, critic_hidden)
 
 
-class SharedRecurrentAgent(RecurrentAgent):
+class SharedRecurrentAgent(RecurrentActorCriticAgent):
     def __init__(
         self,
         state_dim,
@@ -128,9 +119,11 @@ class SharedRecurrentAgent(RecurrentAgent):
 
         # encoding layers
         enc = [
-            nn.Sequential(nn.Linear(i, o), activation())
-            if idx < (len(f_enc) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), activation())
+                if idx < (len(f_enc) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_enc[:-1], f_enc[1:]))
         ]
         self.enc = nn.Sequential(*enc)
@@ -144,16 +137,20 @@ class SharedRecurrentAgent(RecurrentAgent):
         self.hidden_dense = nn.Sequential(*h)
         # output heads
         actor_head = [
-            nn.Sequential(nn.Linear(i, o), activation())
-            if idx < (len(f_actor) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), activation())
+                if idx < (len(f_actor) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_actor[:-1], f_actor[1:]))
         ]
         self.actor_head = nn.Sequential(*actor_head)
         critic_head = [
-            nn.Sequential(nn.Linear(i, o), activation())
-            if idx < (len(f_critic) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), activation())
+                if idx < (len(f_critic) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_critic[:-1], f_critic[1:]))
         ]
         self.critic_head = nn.Sequential(*critic_head)
@@ -201,7 +198,7 @@ class SharedRecurrentAgent(RecurrentAgent):
         return value, (actor_hidden, new_critic_hidden)
 
 
-class SplittedRecurrentAgent(RecurrentAgent):
+class SplittedRecurrentAgent(RecurrentActorCriticAgent):
     def __init__(
         self,
         state_dim,
@@ -225,15 +222,19 @@ class SplittedRecurrentAgent(RecurrentAgent):
 
         # encoding layers
         actor_enc = [
-            nn.Sequential(nn.Linear(i, o), activation())
-            if idx < (len(f_actor_enc) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), activation())
+                if idx < (len(f_actor_enc) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_actor_enc[:-1], f_actor_enc[1:]))
         ]
         critic_enc = [
-            nn.Sequential(nn.Linear(i, o), activation())
-            if idx < (len(f_critic_enc) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), activation())
+                if idx < (len(f_critic_enc) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_critic_enc[:-1], f_critic_enc[1:]))
         ]
         self.actor_enc = nn.Sequential(*actor_enc)
@@ -245,16 +246,20 @@ class SplittedRecurrentAgent(RecurrentAgent):
         )
         # output heads
         actor_head = [
-            nn.Sequential(nn.Linear(i, o), activation())
-            if idx < (len(f_actor_head) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), activation())
+                if idx < (len(f_actor_head) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_actor_head[:-1], f_actor_head[1:]))
         ]
         self.actor_head = nn.Sequential(*actor_head)
         critic_head = [
-            nn.Sequential(nn.Linear(i, o), activation())
-            if idx < (len(f_critic_head) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), activation())
+                if idx < (len(f_critic_head) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_critic_head[:-1], f_critic_head[1:]))
         ]
         self.critic_head = nn.Sequential(*critic_head)
@@ -305,7 +310,7 @@ class SplittedRecurrentAgent(RecurrentAgent):
         return value, (actor_hidden, new_critic_hidden)
 
 
-class DropoutSplittedRecurrentAgent(RecurrentAgent):
+class DropoutSplittedRecurrentAgent(RecurrentActorCriticAgent):
     def __init__(
         self,
         state_dim,
@@ -330,15 +335,19 @@ class DropoutSplittedRecurrentAgent(RecurrentAgent):
 
         # encoding layers
         actor_enc = [
-            nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
-            if idx < (len(f_actor_enc) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
+                if idx < (len(f_actor_enc) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_actor_enc[:-1], f_actor_enc[1:]))
         ]
         critic_enc = [
-            nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
-            if idx < (len(f_critic_enc) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
+                if idx < (len(f_critic_enc) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_critic_enc[:-1], f_critic_enc[1:]))
         ]
         self.actor_enc = nn.Sequential(*actor_enc)
@@ -350,16 +359,20 @@ class DropoutSplittedRecurrentAgent(RecurrentAgent):
         )
         # output heads
         actor_head = [
-            nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
-            if idx < (len(f_actor_head) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
+                if idx < (len(f_actor_head) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_actor_head[:-1], f_actor_head[1:]))
         ]
         self.actor_head = nn.Sequential(*actor_head)
         critic_head = [
-            nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
-            if idx < (len(f_critic_head) - 2)
-            else nn.Linear(i, o)
+            (
+                nn.Sequential(nn.Linear(i, o), nn.Dropout(p=p), activation())
+                if idx < (len(f_critic_head) - 2)
+                else nn.Linear(i, o)
+            )
             for idx, (i, o) in enumerate(zip(f_critic_head[:-1], f_critic_head[1:]))
         ]
         self.critic_head = nn.Sequential(*critic_head)
