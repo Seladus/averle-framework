@@ -19,7 +19,7 @@ from rl.algorithms.rppo import RPPO
 from rl.common.tuning import TuningExperiment
 from rl.models.simple_actor_critic import (
     SharedRecurrentAgent,
-    RecurrentAgent,
+    RecurrentActorCriticAgent,
     SimpleRecurrentAgent,
     SplittedRecurrentAgent,
 )

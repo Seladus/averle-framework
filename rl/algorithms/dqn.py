@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import copy
+from time import time
 from rl.common.buffers.replay_buffer import Batch, ReplayBuffer
 from rl.common.config import Config
 from rl.common.schedulers import PolynomialSchedule
@@ -83,8 +84,14 @@ class DQN(Algorithm):
             self.n_envs,
         )
         self.warmup(env, self.replay_buffer)
+        episodic_rewards_queue = deque([], maxlen=100)
         for e in range(self.nb_epochs):
             next_obs, _ = env.reset()
+
+            t = time()
+            rewards = np.zeros(self.n_envs)
+            episodic_rewards = []
+
             for _ in range(self.epoch_steps):
                 obs = next_obs
                 if np.random.random() < self.eps_scheduler(self.steps):
@@ -97,7 +104,14 @@ class DQN(Algorithm):
                         .numpy()
                     )
                 next_obs, reward, done, truncated, infos = env.step(action)
+                rewards += reward
                 self.replay_buffer.add(obs, action, next_obs, reward, done, truncated)
+
+                done = np.logical_or(done, truncated)
+                if done.any():
+                    (ended_idxs,) = np.where(done)
+                    episodic_rewards += [r for r in rewards[ended_idxs]]
+                    rewards[ended_idxs] = 0
 
                 batch = self.replay_buffer.sample(self.batch_size)
 
@@ -105,6 +119,25 @@ class DQN(Algorithm):
                     self.update(batch)
 
                 self.steps += 1
+
+            if len(episodic_rewards) == 0:
+                episodic_rewards += [r for r in rewards]
+            mean_rewards = np.mean(episodic_rewards)
+            episodic_rewards_queue.append(mean_rewards)
+
+            self.logger.add_scalar(
+                "train/episodic_returns",
+                mean_rewards,
+                self.steps,
+            )
+            self.logger.add_scalar(
+                "train/mean_episodic_returns",
+                np.mean(episodic_rewards_queue),
+                self.steps,
+            )
+            self.logger.add_scalar(
+                "execution/fps", self.nb_epochs / (time() - t), self.steps
+            )
 
             eval = self.evaluate(test_env, nb_test_episodes, seed=self.test_seed)
             self.logger.add_scalar("test/episodic_returns", eval, self.steps)
