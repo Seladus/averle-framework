@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import copy
+import tqdm
 from time import time
 from rl.common.buffers.replay_buffer import Batch, ReplayBuffer
 from rl.common.config import Config
@@ -60,7 +61,7 @@ class DQN(Algorithm):
 
     def warmup(self, env, replay_buffer):
         next_obs, _ = env.reset()
-        for i in range(self.warmup_steps):
+        for i in tqdm.trange(self.warmup_steps, desc="sampling phase"):
             obs = next_obs
             action = env.action_space.sample()
             next_obs, reward, done, truncated, infos = env.step(action)
@@ -76,14 +77,15 @@ class DQN(Algorithm):
     ):
         obs_shape = env.single_observation_space.shape
         self.n_envs = env.num_envs
-        super().train(env, test_env, save=save)
-
         self.replay_buffer = ReplayBuffer(
             obs_shape,
             self.buffer_size,
             self.n_envs,
         )
         self.warmup(env, self.replay_buffer)
+
+        super().train(env, test_env, save=save)
+
         episodic_rewards_queue = deque([], maxlen=100)
         for e in range(self.nb_epochs):
             next_obs, _ = env.reset()
@@ -136,7 +138,7 @@ class DQN(Algorithm):
                 self.steps,
             )
             self.logger.add_scalar(
-                "execution/fps", self.nb_epochs / (time() - t), self.steps
+                "execution/fps", self.epoch_steps / (time() - t), self.steps
             )
 
             eval = self.evaluate(test_env, nb_test_episodes, seed=self.test_seed)
@@ -144,6 +146,10 @@ class DQN(Algorithm):
             self.logger.add_scalar(
                 "train/espilon", self.eps_scheduler(self.steps), self.steps
             )
+            if verbose:
+                print(
+                    f"EPOCH {e} - mean reward : {mean_rewards} - eval reward : {eval}"
+                )
 
         batch: Batch = self.replay_buffer.sample(self.batch_size)
 
@@ -187,7 +193,7 @@ class DQN(Algorithm):
         self.agent.eval()
         n_envs = state.shape[0] if len(state.shape) > 1 else 1
         with torch.no_grad():
-            q = self.agent.q(torch.from_numpy(state).view(n_envs, -1).to(self.device))
+            q = self.agent.q(torch.from_numpy(state).to(self.device))
             action = q.cpu().argmax(dim=-1)
         self.agent.train()
         return action.numpy()

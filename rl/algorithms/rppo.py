@@ -165,7 +165,7 @@ class RPPO(RecurrentAlgorithm):
                     self.steps,
                 )
                 self.logger.add_scalar(
-                    "execution/fps", self.nb_epochs / (time() - t), self.steps
+                    "execution/fps", self.epoch_steps / (time() - t), self.steps
                 )
 
             (
